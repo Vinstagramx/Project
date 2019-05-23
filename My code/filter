@@ -1,0 +1,26 @@
+time = Data[:,0][4000:9000] - [Data[4000,0]]*5000 # *5000 = length of list, nested array repeated by factor outside
+
+'''
+    Fast Fourier Filter
+'''
+def fftfilter(time,data):
+    delta_t=[] 
+    for x in range(0,len(time)-1):
+        m = time[x+1] - time[x]
+        delta_t.append(m)
+       
+    n=len(time)
+    dt=np.mean(delta_t) # the data from MEMs has slightly varied dt - returns even timestep by averaging 
+    freq=np.fft.fftfreq(n,dt)  # gives fourier frequencies  
+    coeff=np.fft.fft(data) #fourier coefficients
+    
+    df=1.5 # accel changes must happen in a timespan more than 0.25s to be physical
+    env=np.exp(-(freq/(2*df))**2) # gaussian of std 10 in fourier space to filter high freq
+    filt=env*coeff # filtered fourier coefficients
+    
+    data_filt=np.fft.ifft(filt)#filtered data
+    return [freq,coeff,filt,data_filt] #returns the useful data
+
+filteredxacc = np.real(fftfilter(time,xacc[4000:9000])[3])
+filteredyacc = np.real(fftfilter(time,yacc[4000:9000])[3])
+filteredzacc = np.real(fftfilter(time,zacc[4000:9000])[3]) 

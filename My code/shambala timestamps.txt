@@ -1,0 +1,5 @@
+shambala timestamps:
+
+108665.381246166 start ride (data point 27)
+108896.356210458 end ride (taken from barometer data) - data point 271
+computer starts counting from 0
