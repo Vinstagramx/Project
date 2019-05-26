@@ -7,6 +7,7 @@ import nose as ns
 import pykalman as pk
 import pandas as pd
 from scipy.integrate import cumtrapz
+from mpl_toolkits import mplot3d
 
 '''
     Obtaining data and placing into arrays
@@ -14,8 +15,17 @@ from scipy.integrate import cumtrapz
 Data = np.loadtxt('C:/Users/user/Documents/Project/Roller Coaster Data/Shambala/nonInertialdata.csv', delimiter = ",", skiprows = 1)
 g = 9.80665
 rawacc = Data[:, [1,2,3]] * g #multiply by g to correct acc
-rawgyro = Data[:, [7,8,9]] * g
-
+rawgrav = Data[:,[4,5,6]]
+rawgyro = Data[:, [7,8,9]]
+rawax = rawacc[:,0]
+raway = rawacc[:,1]
+rawaz = rawacc[:,2]
+roll = rawgyro[:,0]
+pitch = rawgyro[:,1]
+yaw = rawgyro[:,2]
+gx = rawgrav[:,0]
+gy = rawgrav[:,1]
+gz = rawgrav[:,2]
 '''
     Rotating the acceleration to ground frame
 '''
@@ -35,38 +45,37 @@ def taitbryan(x, y, z):
     s2 = np.sin(x)
     c3 = np.cos(y)
     s3 = np.sin(y)
-    matrix = np.array([[((c1 * c3) - (s1 * s2 * s3)), -c2 * s1, ((c1 * s3) + (c3 * s1 * s2))], [((c3 * s1) + (c1 * s2 * s3)), c1 * c2, ((s1 * s3) - (c1 * c3 * s2))], [-c2 * s3, s2, c2 * c3]])
-    rotatedmatrix = sp.asarray(sp.matmul(rot180(np.deg2rad(180)), matrix))
-    return rotatedmatrix
+    matrix = np.matrix([[((c1 * c3) - (s1 * s2 * s3)), -c2 * s1, ((c1 * s3) + (c3 * s1 * s2))], [((c3 * s1) + (c1 * s2 * s3)), c1 * c2, ((s1 * s3) - (c1 * c3 * s2))], [-c2 * s3, s2, c2 * c3]])
+    return rot180(np.deg2rad(180)) * matrix
 
 specificrot = []
 xacc = []
 yacc = []
 zacc = []
-for x in range (0,len(rawgyro[:,0])):
-    specificrot.append(taitbryan(rawgyro[x,0], rawgyro[x,1], rawgyro[x,2]))
-    
-for x in range (0,len(rawacc[:,0])):
-    acc_matrix = sp.matmul(specificrot[x],rawacc[x]) #array output of matrix multiplication
-    xacc.append(acc_matrix[0])
-    yacc.append(acc_matrix[1])
-    zacc.append(acc_matrix[2])
+for x in range(0,len(gx)):
+
+    rotation = taitbryan(pitch[x],roll[x],yaw[x])
+    acc = rotation* np.matrix([[rawax[x]],[raway[x]],[rawaz[x]]])
+    xacc.append(acc[0,0])
+    yacc.append(-acc[1,0])
+    zacc.append(acc[2,0])
 
 # this becomes the list of all transformation matrices which will return the accel to the ground frame in all three axes (pitch roll and yaw)
 # rotated accel into ground frame
 
+
 '''
     Plotting unfiltered accelerations
 '''
-plt.plot(sp.arange(0,len(rawgyro[:,0])), xacc)
+plt.plot(xacc)
 plt.title("Acceleration in the x-direction relative to the ground/ms^-2")
 plt.savefig('xacc.png', dpi = 500)
 plt.show()
-plt.plot(sp.arange(0,len(rawgyro[:,0])), yacc)
+plt.plot(yacc)
 plt.title("Acceleration in the y-direction relative to the ground/ms^-2")
 plt.savefig('yacc.png', dpi = 500)
 plt.show()
-plt.plot(sp.arange(0,len(rawgyro[:,0])), zacc)
+plt.plot(zacc)
 plt.title("Acceleration in the z-direction relative to the ground/ms^-2")
 plt.savefig('zacc.png', dpi = 500)
 plt.show()
@@ -74,7 +83,7 @@ plt.show()
 '''
     Trimming data
 '''
-time = Data[:,0][2500:25500]-[Data[0,0]]*3560
+time = Data[:,0][9500:25500]-[Data[0,0]]*16000
 
 '''
     Fast Fourier Filter
@@ -90,16 +99,67 @@ def fftfilter(time,data):
     freq=np.fft.fftfreq(n,dt)  # gives fourier frequencies  
     coeff=np.fft.fft(data) #fourier coefficients
     
-    df=2 # accel changes must happen in a timespan more than 0.25s to be physical
+    df=1 # accel changes must happen in a timespan more than 0.25s to be physical
     env=np.exp(-(freq/(2*df))**2) # gaussian of std 10 in fourier space to filter high freq
     filt=env*coeff # filtered fourier coefficients
     
     data_filt=np.fft.ifft(filt)#filtered data
     return [freq,coeff,filt,data_filt] #returns the useful data
 
-filteredxacc = np.real(fftfilter(time,xacc[2500:25500])[3])
-filteredyacc = np.real(fftfilter(time,yacc[2500:25500])[3])
-filteredzacc = np.real(fftfilter(time,zacc[2500:25500])[3])
+"""
+trimming and filtering the acceleration data
+"""
+filteredxacc = np.real(fftfilter(time,xacc[9500:25500])[3])
+filteredyacc = np.real(fftfilter(time,yacc[9500:25500])[3])
+filteredzacc = np.real(fftfilter(time,zacc[9500:25500])[3])
+
+plt.plot(filteredxacc)
+plt.title("Filtered acceleration in the x-direction relative to the ground/ms^-2")
+plt.savefig('fxacc.png', dpi = 500)
+plt.show()
+plt.plot(filteredyacc)
+plt.title("Filtered acceleration in the y-direction relative to the ground/ms^-2")
+plt.savefig('fyacc.png', dpi = 500)
+plt.show()
+plt.plot(filteredzacc)
+plt.title("Filtered acceleration in the z-direction relative to the ground/ms^-2")
+plt.savefig('fzacc.png', dpi = 500)
+plt.show()
+
+"""
+    Defining any acceleration below a certain value as being equal to zero - as rate of change is
+    stil present in the random changes/noise in the very small accelerations - which affects the integration.
+"""
+for i, val in enumerate(filteredxacc):
+    if val < 0.25:
+        filteredxacc[i] = 0
+        
+for i, val in enumerate(filteredyacc):
+    if val < 0.25:
+        filteredyacc[i] = 0
+        
+for i, val in enumerate(filteredzacc):
+    if val < 0.25:
+        filteredzacc[i] = 0
+
+"""
+    Plotting velocities
+"""
+
+plt.plot(xvel)
+plt.title("Velocity in the x-direction relative to the ground/ms^-1")
+plt.savefig('fxvel.png', dpi = 500)
+plt.show()
+plt.plot(yvel)
+plt.title("Velocity in the y-direction relative to the ground/ms^-1")
+plt.savefig('fyvel.png', dpi = 500)
+plt.show()
+plt.plot(zvel)
+plt.title("Velocity in the z-direction relative to the ground/ms^-1")
+plt.savefig('fzvel.png', dpi = 500)
+plt.show()
+
+
 '''
     Integration function with boundary condition
 '''
@@ -107,31 +167,45 @@ def intbound(X,t):
     #inverting the list and integrating fwds and bkwds
     X_flip = X[::-1]
     vel = cumtrapz(X,t,initial=0)
-    vel_flip=cumtrapz(X_flip,t,initial=0)
+    vel_flip = cumtrapz(X_flip,t,initial=0)
     #creating a list of the weighted fwds and bkwds integrated values
-    weighted_vel1=[]
+    weighted_vel1 = []
     for n in range (0,len(vel)):
-        w = ((len(vel)-1-n)/len(vel)-1) #w=weight
+        w = ((len(vel)-1-n)/len(vel)-1) +1 #w=weight
         weighted_vel1.append(vel[n]*w)
 
     weighted_vel1 = np.asarray(weighted_vel1)
     
-    weighted_vel_flip=[]
+    weighted_vel_flip = []
     for n in range (0,len(vel_flip)):
-        w = ((len(vel_flip)-1-n)/len(vel_flip)-1)
+        w = ((len(vel_flip)-1-n)/len(vel_flip)-1) +1
         weighted_vel_flip.append(vel_flip[n]*w)
 
     weighted_vel_flip = np.asarray(weighted_vel_flip)
     
     weighted_vel2 = weighted_vel_flip[::-1] #swapping inverted list right way round again
 
-    totalvel=[]
+    totalvel = []
     for x in range(0,len(vel)):
         totalvel.append(weighted_vel1[x] + weighted_vel2[x])
         
     totalvel = np.asarray(totalvel)
     return totalvel
 
+
+"""
+Integration - twice from acc to position and plotting
+"""
+xvel = intbound(filteredxacc,time)
+xpos = intbound(xvel,time)
+yvel = intbound(filteredyacc,time)
+ypos = intbound(yvel,time)
+zvel = intbound(filteredzacc,time)
+zpos = intbound(zvel,time)
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot3D(xpos, ypos, zpos, 'gray')
 
 '''
     Obtaining barometer data
@@ -172,9 +246,11 @@ plt.show()
 '''
     Pressure assimilation
 '''
-filteredzacc = np.real(fftfilter(time,zacc[2500:25500])[3]) #filtered and trimmed z acceleration
 trimmedalt = np.asarray(altitude[26:270])
 
+"""
+trimming the barometer data to the correct time
+"""
 
 def veltopos(vel,pos,t): #should return correct position in 1D. use boundary first to get vel from acc
 
@@ -190,10 +266,10 @@ def veltopos(vel,pos,t): #should return correct position in 1D. use boundary fir
         time_right.extend([time[(x*m):len(pos)]])
         time_left.extend([time[0:(x*m)]])
 
-    right=[]#forward trajectory to right of position with x0=x_position for each a point
-    right_flip=[]#backward right
-    left=[]
-    left_flip=[]
+    right = []#forward trajectory to right of position with x0=x_position for each a point
+    right_flip = []#backward right
+    left = []
+    left_flip = []
     for x in range (0,len(pos)):
         right.append(cumtrapz(vel_right[x],time_right,initial=pos[x]))
 
@@ -206,10 +282,10 @@ def veltopos(vel,pos,t): #should return correct position in 1D. use boundary fir
         left_flip.append(left_flip_backwards[::-1])     #gotta flip the backwards integrals cos the integrated data will be given bkwds to the fwd data 
    
 
-    left_weight=[] # weighted trajectory of fwd and back for ONE altitude point (to the right)
-    left_weight_tot=[] #list of all weighted trajectories to left of position points 
-    right_weight=[]
-    right_weight_tot=[]
+    left_weight = [] # weighted trajectory of fwd and back for ONE altitude point (to the right)
+    left_weight_tot = [] #list of all weighted trajectories to left of position points 
+    right_weight = []
+    right_weight_tot = []
      
     for t in range(0,len(pos)):
         m = len(left[t]) #length of a specific left traj for a specific position point
@@ -219,38 +295,37 @@ def veltopos(vel,pos,t): #should return correct position in 1D. use boundary fir
             left_weight.append(left[t][0][0])#do this to avoid dividing by zero in the weighting process; cos if m=1, m-1=0
         else:
             for x in range (0,m):
-                left_f_w=((m-x-1)/(m-1))*left[t][0][x] #fwd weighted so most confident at points near position point
-                left_b_w=(x/(m-1))*left_flip[t][0][x] #bkwd weighted so most confident at end start of tot traj
+                left_f_w = ((m-x-1)/(m-1))*left[t][0][x] #fwd weighted so most confident at points near position point
+                left_b_w = (x/(m-1))*left_flip[t][0][x] #bkwd weighted so most confident at end start of tot traj
                 left_weight.append(np.mean([left_f_w,left_b_w])) #add each weighted point to the traj to make up one whole traj
         left_weight_tot.append(left_weight)#add specific weighted traj for specif position point to set of all left traj
         if k==1:
             right_weight.append(right[t][0][0])
         else:
             for x in range (0,k):
-                right_f_w=((k-x-1)/(k-1))*right[t][0][x]
-                right_b_w=(x/(k-1))*right_flip[t][0][x]
+                right_f_w = ((k-x-1)/(k-1))*right[t][0][x]
+                right_b_w = (x/(k-1))*right_flip[t][0][x]
                 right_weight.append(np.mean([right_f_w,right_b_w]))  
                 #print(np.mean([right_f_w,right_b_w]))
         right_weight_tot.append(right_weight)#same deal but for traj to the right of position points 
         
-    weight_tot=[]#list of the total weighted trajectories for each position point
+    weight_tot = []#list of the total weighted trajectories for each position point
     for t in range (0,len(right_weight_tot)):
         weight_tot.append(left_weight_tot[t]+right_weight_tot[t])#just combine left and right trajectories
-    full_trajectory=[]#weight each trajectory, with highest confidence for the points near the position point
+    full_trajectory = []#weight each trajectory, with highest confidence for the points near the position point
     for t in range(0,len(pos)):
         for x in range(0,len(weight_tot)):
             if x>=round(n*t): # this is weighting for points to right of position point
-                w1=(len(weight_tot)-1-x)/(len(weight_tot)-round(n*t)-1) #stuff to the left of position point
+                w1 = (len(weight_tot)-1-x)/(len(weight_tot)-round(n*t)-1) #stuff to the left of position point
                 full_trajectory.append(w1*weight_tot[t][x])                
             else:
-                w2=x/(round(n*t)-1)
+                w2 = x/(round(n*t)-1)
                 full_trajectory.append(w2*weight_tot[t][x])
                 
     return full_trajectory
 #%%
-zvel=intbound(filteredzacc,time)
 zpos=veltopos(zvel,trimmedalt,time)
-plt.plot(time,zpos)
+plt.plot(zpos)
 
 """
     Converting latitude and longitude to x and y
@@ -485,13 +560,31 @@ def latlon_to_zone_number(latitude, longitude):
 def zone_number_to_central_longitude(zone_number):
     return (zone_number - 1) * 6 - 180 + 3
 
-barometer_data = np.loadtxt('C:/Users/user/Documents/Project/Roller Coaster Data/Shambala/gpsData.csv', delimiter = ",", skiprows = 1)
-latitude = barometer_data[:,1]
-longitude = barometer_data[:,2]
+gps_data = np.loadtxt('C:/Users/user/Documents/Project/Roller Coaster Data/Shambala/gpsData.csv', delimiter = ",", skiprows = 1)
+latitude = gps_data[:,1]
+longitude = gps_data[:,2]
 
-output = []
-for x in range(0, len(latitude)):
-    output.append(latlon_xy(latitude[x],longitude[x]))
+"""
+    Trimming latitude and longitude data
+"""
+lattrim = latitude[93:245]
+longtrim = latitude[93:245]
+
+xy = []
+origin = latlon_xy(lattrim[0],longtrim[0])
+for x in range(0, len(lattrim) - 1):
+    converted = latlon_xy(lattrim[x],longtrim[x])
+    xy.append([converted[0] - origin[0], converted[1] - origin[1]])
+    
+xyTranspose = list(map(list, zip(*xy)))
+x = xyTranspose[0]
+y = xyTranspose[1]
+"""
+xyTranspose is a 1d list - [0] is latitude, [1] is longitude, [2] is zone number(useless)
+access each element by [0][x] - gives xth element of latitude
+
+"""
+
     
 
 
